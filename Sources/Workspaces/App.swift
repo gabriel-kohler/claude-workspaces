@@ -1,0 +1,135 @@
+import AppKit
+import SwiftUI
+import WorkspacesCore
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var signalSources: [DispatchSourceSignal] = []
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.appearance = NSAppearance(named: .darkAqua)
+        // A `kill` or a logout skips applicationWillTerminate; without this the sessions outlive the app.
+        for sig in [SIGTERM, SIGINT, SIGHUP] {
+            signal(sig, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+            source.setEventHandler {
+                MainActor.assumeIsolated { AppModel.shared.shutdown() }
+                exit(0)
+            }
+            source.resume()
+            signalSources.append(source)
+        }
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        MainActor.assumeIsolated { AppModel.shared.shutdown() }
+    }
+}
+
+struct WorkspacesApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
+    @State private var model = AppModel.shared
+
+    var body: some Scene {
+        WindowGroup("Workspace", id: "workspace", for: UUID.self) { $workspaceId in
+            RootWindow(workspaceId: $workspaceId)
+                .environment(model)
+                .preferredColorScheme(.dark)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 1200, height: 760)
+        .commands { WorkspaceCommands(model: model) }
+
+        Window("Consumo", id: "usage") {
+            UsageView()
+                .environment(model)
+                .preferredColorScheme(.dark)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 900, height: 640)
+
+        Settings {
+            SettingsView()
+                .environment(model)
+                .preferredColorScheme(.dark)
+        }
+
+        MenuBarExtra {
+            MenuBarView()
+                .environment(model)
+                .preferredColorScheme(.dark)
+        } label: {
+            MenuBarLabel(count: model.sessionsNeedingYou.count)
+        }
+        .menuBarExtraStyle(.window)
+    }
+}
+
+private struct MenuBarLabel: View {
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "rectangle.stack")
+            if count > 0 { Text("\(count)") }
+        }
+        .accessibilityLabel(count > 0 ? "Workspaces, \(count) esperando você" : "Workspaces")
+    }
+}
+
+private struct WorkspaceCommands: Commands {
+    let model: AppModel
+
+    var body: some Commands {
+        CommandMenu("Workspaces") {
+            WorkspaceMenuItems(model: model)
+        }
+    }
+}
+
+private struct WorkspaceMenuItems: View {
+    let model: AppModel
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        ForEach(Array(model.config.workspaces.prefix(9).enumerated()), id: \.element.id) { index, workspace in
+            Button(workspace.name) { openWindow(id: "workspace", value: workspace.id) }
+                .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .control)
+        }
+    }
+}
+
+/// A window starts without a workspace (first launch, ⌘N) and shows the picker.
+private struct RootWindow: View {
+    @Binding var workspaceId: UUID?
+    /// Restored windows ignore writes to `workspaceId` made while appearing, so the choice is also kept here.
+    @State private var chosen: UUID?
+    @Environment(AppModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
+
+    private var current: UUID? {
+        [workspaceId, chosen].compactMap { $0 }.first { model.workspace($0) != nil }
+    }
+
+    var body: some View {
+        Group {
+            if let id = current {
+                WorkspaceWindow(workspaceId: id)
+            } else {
+                WorkspacePicker { choose($0) }
+            }
+        }
+        .onAppear {
+            model.openWindow = openWindow
+            model.openSettings = openSettings
+            if current == nil, let id = model.takePendingOpen() { choose(id) }
+        }
+    }
+
+    private func choose(_ id: UUID) {
+        chosen = id
+        workspaceId = id
+    }
+}
