@@ -209,10 +209,21 @@ final class AppModel {
         return launch(saved: saved, project: project, workspaceId: workspace.id, prompt: prompt)
     }
 
+    /// A plain login shell in the project, or in `folder` (a session's worktree), listed with the sessions.
+    @discardableResult
+    func newTerminal(projectId: UUID, folder: String? = nil) -> SessionRuntime? {
+        guard let (workspace, project) = project(projectId) else { return nil }
+        let folder = folder.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil } ?? project.path
+        let place = Git.branch(at: folder) ?? URL(fileURLWithPath: folder).lastPathComponent
+        let saved = SavedSession(id: UUID(), label: "Terminal · \(place)", cwd: folder, terminal: true)
+        updateProject(projectId) { $0.savedSessions.append(saved) }
+        return launch(saved: saved, project: project, workspaceId: workspace.id)
+    }
+
     @discardableResult
     private func launch(saved: SavedSession, project: Project, workspaceId: UUID, prompt: String? = nil) -> SessionRuntime {
         let runtime = SessionRuntime(id: saved.id, workspaceId: workspaceId, projectId: project.id,
-                                     label: saved.label, worktree: saved.worktree)
+                                     label: saved.label, worktree: saved.worktree, isTerminal: saved.terminal)
         runtime.claudeSessionId = saved.claudeSessionId
         runtime.hasConversation = saved.claudeSessionId != nil
         runtime.cwd = saved.cwd
@@ -228,6 +239,11 @@ final class AppModel {
                 guard let self, let runtime, self.session(runtime.id) != nil else { return }
                 self.start(runtime, project: project, prompt: prompt)
             }
+            return
+        }
+        if runtime.isTerminal {
+            let folder = runtime.cwd.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil } ?? project.path
+            startShell(runtime, in: folder, environment: loginEnvironment)
             return
         }
         let resuming = runtime.hasConversation && runtime.claudeSessionId != nil
@@ -304,11 +320,25 @@ final class AppModel {
         guard let runtime = session(id), !runtime.host.isRunning, let loginEnvironment,
               let (_, project) = project(runtime.projectId) else { return }
         let folder = runtime.cwd.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil } ?? project.path
+        startShell(runtime, in: folder, environment: loginEnvironment)
+    }
+
+    private func startShell(_ runtime: SessionRuntime, in folder: String, environment: [String: String]) {
         runtime.shellOnly = true
+        runtime.sleep = .awake
         runtime.status = .idle
         runtime.lastChange = Date()
-        runtime.host.start(executable: loginEnvironment["SHELL"] ?? "/bin/zsh", arguments: ["-l"],
-                           environment: loginEnvironment, directory: folder)
+        runtime.lastSeen = Date()
+        if runtime.isTerminal {
+            runtime.host.onTerminated = { [weak self, weak runtime] in
+                guard let runtime else { return }
+                runtime.status = .ended
+                runtime.lastChange = Date()
+                self?.updateBadge()
+            }
+        }
+        runtime.host.start(executable: environment["SHELL"] ?? "/bin/zsh", arguments: ["-l"],
+                           environment: environment, directory: folder)
     }
 
     // MARK: Sleep

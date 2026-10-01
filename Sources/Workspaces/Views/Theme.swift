@@ -26,10 +26,15 @@ struct StatusGlyph: View {
     let status: SessionStatus
     var attention = false
     var size: CGFloat = 12
+    var terminal = false
 
     var body: some View {
         Group {
-            if status == .waiting || attention {
+            if terminal, !attention {
+                Image(systemName: "terminal")
+                    .font(.system(size: size * 0.8, weight: .medium))
+                    .foregroundStyle(status == .ended ? Theme.faint : Theme.tertiary)
+            } else if status == .waiting || attention {
                 ZStack {
                     Circle().stroke(Theme.primary.opacity(0.35), lineWidth: 1)
                     Circle().fill(Theme.primary).padding(size * 0.25)
@@ -45,7 +50,8 @@ struct StatusGlyph: View {
             }
         }
         .frame(width: size, height: size)
-        .accessibilityLabel(attention && status != .waiting ? "Pede sua atenção" : status.label)
+        .accessibilityLabel(terminal ? (status == .ended ? "Terminal encerrado" : "Terminal")
+                            : attention && status != .waiting ? "Pede sua atenção" : status.label)
     }
 }
 

@@ -118,7 +118,7 @@ struct UsageView: View {
 
     private func row(_ session: SessionRuntime) -> some View {
         HStack(spacing: 12) {
-            StatusGlyph(status: session.status, attention: session.attention)
+            StatusGlyph(status: session.status, attention: session.attention, terminal: session.isTerminal)
             VStack(alignment: .leading, spacing: 2) {
                 Text(model.displayLabel(session)).font(.system(size: 13)).lineLimit(1)
                 Text(model.project(session.projectId)?.project.name ?? "")

@@ -15,13 +15,27 @@ public struct SavedSession: Codable, Hashable, Identifiable, Sendable {
     public var worktree: String?
     /// Last folder Claude reported; a worktree session must be resumed from there.
     public var cwd: String?
+    /// A plain shell instead of Claude, reopened in `cwd`.
+    public var terminal: Bool
 
-    public init(id: UUID, label: String, claudeSessionId: String? = nil, worktree: String? = nil, cwd: String? = nil) {
+    public init(id: UUID, label: String, claudeSessionId: String? = nil, worktree: String? = nil, cwd: String? = nil,
+                terminal: Bool = false) {
         self.id = id
         self.label = label
         self.claudeSessionId = claudeSessionId
         self.worktree = worktree
         self.cwd = cwd
+        self.terminal = terminal
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        label = try c.decode(String.self, forKey: .label)
+        claudeSessionId = try c.decodeIfPresent(String.self, forKey: .claudeSessionId)
+        worktree = try c.decodeIfPresent(String.self, forKey: .worktree)
+        cwd = try c.decodeIfPresent(String.self, forKey: .cwd)
+        terminal = try c.decodeIfPresent(Bool.self, forKey: .terminal) ?? false
     }
 }
 

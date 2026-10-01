@@ -143,6 +143,7 @@ private struct Sidebar: View {
         .padding(.top, 6)
         .contextMenu {
             Button("Nova sessão em \(project.name)") { newSession(in: project.id) }
+            Button("Novo terminal em \(project.name)") { newTerminal(in: project.id) }
             Button("Mostrar no Finder") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: project.path) }
         }
         .accessibilityLabel("\(project.name), \(sessions.count) sessões")
@@ -155,7 +156,7 @@ private struct Sidebar: View {
             mode = .single
         } label: {
             HStack(spacing: 8) {
-                StatusGlyph(status: session.status, attention: session.attention)
+                StatusGlyph(status: session.status, attention: session.attention, terminal: session.isTerminal)
                 Text(model.displayLabel(session))
                     .font(.system(size: 13, weight: session.needsYou ? .semibold : (selected ? .medium : .regular)))
                     .foregroundStyle(session.needsYou || selected ? Theme.primary : (session.status == .working ? Theme.support : Theme.secondary))
@@ -186,6 +187,9 @@ private struct Sidebar: View {
                 Button(session.hasConversation ? "Hibernar agora" : "Congelar agora") { model.sleepNow(session.id) }
             }
             Button("Nova sessão neste projeto") { newSession(in: session.projectId) }
+            if !session.isTerminal {
+                Button("Abrir terminal na pasta desta sessão") { newTerminal(in: session.projectId, folder: session.cwd) }
+            }
             Divider()
             Button("Fechar sessão") { model.closeSession(session.id) }
         }
@@ -193,6 +197,13 @@ private struct Sidebar: View {
 
     private func newSession(in projectId: UUID) {
         if let runtime = model.newSession(projectId: projectId) {
+            selection = runtime.id
+            mode = .single
+        }
+    }
+
+    private func newTerminal(in projectId: UUID, folder: String? = nil) {
+        if let runtime = model.newTerminal(projectId: projectId, folder: folder) {
             selection = runtime.id
             mode = .single
         }
@@ -268,7 +279,7 @@ private struct DetailToolbar: View {
                 }
                 .font(.system(size: 13))
                 .lineLimit(1)
-                StatusPill(session: session)
+                if !session.isTerminal { StatusPill(session: session) }
                 if session.sleep != .awake { SleepTag(sleep: session.sleep) }
                 UsageBadge(session: session)
                 if session.status == .working, let activity = session.activity {
@@ -278,11 +289,19 @@ private struct DetailToolbar: View {
             Spacer(minLength: 8)
             SegmentedSwitch(options: [("Uma", DetailMode.single), ("Grade", DetailMode.grid)], selection: $mode)
             UsageButton()
+            NewTerminalMenu(workspaceId: workspaceId, selection: model.session(selection)) { id in
+                selectTerminal(id)
+            }
             NewSessionMenu(workspaceId: workspaceId, preferredProject: model.session(selection)?.projectId)
         }
         .padding(.leading, 24)
         .padding(.trailing, 16)
         .frame(height: 52)
+    }
+
+    /// The window owns the selection; the toolbar asks it to show the new terminal.
+    private func selectTerminal(_ id: UUID) {
+        model.focusRequest = (workspaceId, id)
     }
 
     private var gridSummary: String {
@@ -369,6 +388,43 @@ private struct UsageButton: View {
     }
 }
 
+/// Opens a plain shell: where the shown session works (its worktree included), or in a chosen project.
+private struct NewTerminalMenu: View {
+    let workspaceId: UUID
+    let selection: SessionRuntime?
+    let opened: (UUID) -> Void
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let projects = model.workspace(workspaceId)?.projects ?? []
+        Menu {
+            ForEach(projects) { project in
+                Button("Novo terminal em \(project.name)") { open(project.id, folder: nil) }
+            }
+        } label: {
+            Image(systemName: "terminal")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.support)
+                .frame(width: 28, height: 26)
+                .contentShape(Rectangle())
+        } primaryAction: {
+            if let selection { open(selection.projectId, folder: selection.cwd) }
+            else if let id = projects.first?.id { open(id, folder: nil) }
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(projects.isEmpty)
+        .help("Novo terminal na pasta da sessão aberta (clique longo para escolher o projeto)")
+        .accessibilityLabel("Novo terminal")
+    }
+
+    private func open(_ projectId: UUID, folder: String?) {
+        if let runtime = model.newTerminal(projectId: projectId, folder: folder) { opened(runtime.id) }
+    }
+}
+
 private struct NewSessionMenu: View {
     let workspaceId: UUID
     let preferredProject: UUID?
@@ -414,9 +470,10 @@ private struct SingleSession: View {
                     .padding(.vertical, 14)
                 if session.status == .ended {
                     HStack(spacing: 12) {
-                        Text("A sessão terminou.").font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                        Text(session.isTerminal ? "O terminal foi encerrado." : "A sessão terminou.")
+                            .font(.system(size: 12)).foregroundStyle(Theme.secondary)
                         Button("Abrir de novo") { model.restart(session.id) }
-                        Button("Abrir shell aqui") { model.openShell(session.id) }
+                        if !session.isTerminal { Button("Abrir shell aqui") { model.openShell(session.id) } }
                         Button("Fechar") { model.closeSession(session.id) }
                     }
                     .controlSize(.small)

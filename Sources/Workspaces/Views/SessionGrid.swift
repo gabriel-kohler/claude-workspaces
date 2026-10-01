@@ -64,7 +64,7 @@ private struct SessionTile: View {
         Button(action: action) {
             VStack(spacing: 0) {
                 HStack(spacing: 8) {
-                    StatusGlyph(status: session.status, attention: session.attention)
+                    StatusGlyph(status: session.status, attention: session.attention, terminal: session.isTerminal)
                     Text(model.displayLabel(session))
                         .font(.system(size: 12, weight: session.needsYou ? .semibold : .regular))
                         .foregroundStyle(session.needsYou ? Theme.primary : Theme.support)

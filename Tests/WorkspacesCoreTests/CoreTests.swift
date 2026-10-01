@@ -148,7 +148,8 @@ import Testing
         let store = ConfigStore(url: url)
         var config = AppConfig()
         config.workspaces = [Workspace(name: "Trabalho", projects: [Project(name: "central", path: "/p", newSessionMode: .worktree, sessionsOnOpen: 3,
-                                                                              savedSessions: [SavedSession(id: UUID(), label: "main", claudeSessionId: "c1", cwd: "/p")])])]
+                                                                              savedSessions: [SavedSession(id: UUID(), label: "main", claudeSessionId: "c1", cwd: "/p"),
+                                                                                              SavedSession(id: UUID(), label: "Terminal · main", cwd: "/p", terminal: true)])])]
         try store.save(config)
         #expect(try store.load() == config)
     }
@@ -166,6 +167,13 @@ import Testing
         #expect(project.sessionsOnOpen == 1)
         #expect(project.newSessionMode == .folder)
         #expect(config.disabledTools == ["close_session"])
+    }
+
+    @Test func savedSessionWithoutTerminalFlagIsClaude() throws {
+        let json = #"{"id":"6F1C2A4E-0000-4000-8000-000000000001","label":"main","claudeSessionId":"c1"}"#
+        let saved = try JSONDecoder().decode(SavedSession.self, from: Data(json.utf8))
+        #expect(saved.terminal == false)
+        #expect(saved.claudeSessionId == "c1")
     }
 
     @Test func brokenFileThrows() throws {

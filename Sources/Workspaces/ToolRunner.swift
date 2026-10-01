@@ -34,6 +34,7 @@ struct ToolRunner {
                 if sessions.isEmpty { lines.append("    (no sessions)") }
                 for s in sessions {
                     var line = "    - \(s.label) | \(s.status.rawValue) | id \(s.shortId)"
+                    if s.isTerminal { line += " | terminal (shell, not Claude)" }
                     if let activity = s.activity, s.status == .working { line += " | \(activity)" }
                     if let message = s.message, s.status == .waiting { line += " | \(message)" }
                     if s.sleep != .awake { line += " | \(s.sleep.rawValue), wakes when opened or messaged" }
@@ -100,6 +101,7 @@ struct ToolRunner {
             return ToolResult(text: "Sessão não encontrada.", isError: true)
         }
         guard target.id != caller?.id else { return ToolResult(text: "Esta é a própria sessão.", isError: true) }
+        guard !target.isTerminal else { return ToolResult(text: "\(target.label) é um terminal, não uma sessão do Claude.", isError: true) }
         let from = caller.map { "[recado de \($0.label)] " } ?? ""
         guard model.deliver(from + text, to: target) else {
             return ToolResult(text: "\(target.label) está encerrada; o recado não foi entregue.", isError: true)

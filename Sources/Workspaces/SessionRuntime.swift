@@ -8,6 +8,8 @@ final class SessionRuntime: Identifiable {
     let id: UUID
     let workspaceId: UUID
     let projectId: UUID
+    /// A plain shell opened by the person, not a Claude session.
+    let isTerminal: Bool
     var label: String
     var status: SessionStatus = .working
     /// Phrase from `set_status`.
@@ -38,10 +40,11 @@ final class SessionRuntime: Identifiable {
 
     @ObservationIgnored let host = TerminalHost()
 
-    init(id: UUID, workspaceId: UUID, projectId: UUID, label: String, worktree: String?) {
+    init(id: UUID, workspaceId: UUID, projectId: UUID, label: String, worktree: String?, isTerminal: Bool = false) {
         self.id = id
         self.workspaceId = workspaceId
         self.projectId = projectId
+        self.isTerminal = isTerminal
         self.label = label
         self.worktree = worktree
     }
@@ -51,6 +54,7 @@ final class SessionRuntime: Identifiable {
     /// Shown under the name: why it waits, or what it is doing.
     var detail: String {
         if sleep != .awake { return sleep == .frozen ? "Congelada, volta na hora ao abrir" : "Hibernando, retoma ao abrir" }
+        if isTerminal { return status == .ended ? "Terminal encerrado" : "Terminal" }
         if status == .waiting, let message { return message }
         if status == .working, let activity { return activity }
         return status.label
