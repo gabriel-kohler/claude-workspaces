@@ -33,12 +33,21 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSSupportsAutomaticTermination</key><false/>
+  <!-- Without it, macOS denies Apple Events from the sessions silently (-1743) instead of asking. -->
+  <key>NSAppleEventsUsageDescription</key><string>O Workspaces roda sessões do Claude Code e terminais que podem controlar outros apps.</string>
 </dict>
 </plist>
 PLIST
 
-codesign --force --sign - "$APP/Contents/MacOS/workspaces-hook"
-codesign --force --sign - "$APP"
+# Privacy grants (Full Disk Access, Automation) are keyed to the signing identity.
+# An ad-hoc signature changes on every build and drops them, so prefer a real certificate.
+# Override with WORKSPACES_SIGN_IDENTITY="<name or SHA-1>"; "-" forces ad-hoc.
+IDENTITY="${WORKSPACES_SIGN_IDENTITY:-$(security find-identity -v -p codesigning | awk -F'"' '/Apple Development/ { print $2; exit }')}"
+IDENTITY="${IDENTITY:--}"
+[[ "$IDENTITY" == "-" ]] && echo "Aviso: assinatura ad-hoc, as permissões do macOS somem a cada build." >&2
+
+codesign --force --sign "$IDENTITY" "$APP/Contents/MacOS/workspaces-hook"
+codesign --force --sign "$IDENTITY" "$APP"
 echo "Pronto: $APP"
 
 if [[ "${1:-}" == "--install" ]]; then
